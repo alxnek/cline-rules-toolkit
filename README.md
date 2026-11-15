@@ -6,30 +6,47 @@ verdad: se editan aquí y se instalan en cada proyecto con `install.ps1`.
 ## Inicio rápido (con un agente de Cline)
 
 Copia este prompt en una tarea de Cline abierta en la **raíz del proyecto** donde
-quieras las reglas. El agente clona el kit, lo instala y rellena las plantillas por ti:
+quieras las reglas. Requiere Git y Windows PowerShell. El agente inspecciona primero
+el proyecto; no debe sustituir ni editar reglas personalizadas sin tu autorización:
 
 ```text
-Instala y configura el kit cline-rules-toolkit (https://github.com/alxnek/cline-rules-toolkit.git)
-en este proyecto. Idioma: español. Sigue estos pasos en PowerShell (Windows):
+Instala y configura cline-rules-toolkit en la raíz de este proyecto.
+Fuente: https://github.com/alxnek/cline-rules-toolkit.git. Idioma: español.
+Usa PowerShell en Windows y sigue este procedimiento:
 
-1. Clona el kit FUERA del proyecto (no lo metas en el repo):
-   git clone https://github.com/alxnek/cline-rules-toolkit.git "$env:TEMP/cline-rules-toolkit"
-2. Entra en esa carpeta y ejecuta primero la vista previa (no escribe nada):
-   ./install.ps1 -Project "<raíz de este proyecto>" -WhatIf
-   Si el resultado es correcto, repite el mismo comando SIN -WhatIf para instalar.
-3. Instala las plantillas:  ./install-templates.ps1 -Project "<raíz de este proyecto>"
-4. Rellena los <huecos> de .clinerules/00-overview.md, 10-architecture.md y 20-testing.md
-   con datos REALES de este proyecto (stack, estructura de carpetas, comandos de test).
-5. No sobrescribas a mano ningún .clinerules/*.md que ya exista y sea distinto:
-   los scripts ya hacen backup en .clinerules.bak/<timestamp>/. Respétalo.
-6. Si PowerShell bloquea la ejecución (ExecutionPolicy):
-   powershell -ExecutionPolicy Bypass -File ./install.ps1 -Project "<raíz de este proyecto>"
-7. Al terminar, resume en una tabla qué ficheros creó (+) / actualizó (~) / respetó (=)
-   y qué plantillas quedaron pendientes de rellenar.
+1. Identifica la raíz absoluta del proyecto y revisa git status, si existe Git.
+   Inventaría y lee las reglas existentes de .clinerules, .cline/rules,
+   AGENTS.md, .cursorrules y .windsurfrules; revisa también .clineignore.
+   No imprimas secretos ni modifiques reglas globales. Si .clinerules es un
+   archivo y no una carpeta, detente y pide una decisión de migración.
+2. Clona el kit fuera del proyecto en una carpeta temporal nueva y única:
+   $kit = Join-Path $env:TEMP ("cline-rules-toolkit-" + [guid]::NewGuid().ToString('N'))
+   git clone https://github.com/alxnek/cline-rules-toolkit.git $kit
+   Si falla el clon, detente. No borres ni reutilices carpetas existentes.
+3. Lee las reglas y plantillas del kit. Compara su contenido con las reglas
+   existentes, aunque tengan nombres diferentes. Si hay contradicciones o
+   dudas, presenta los conflictos y pide una decisión antes de modificar nada.
+   No dupliques reglas que contradigan las existentes ni asumas su prioridad.
+4. Ejecuta ambas vistas previas antes de instalar, con la raíz absoluta:
+   & "$kit\install.ps1" -Project "<raíz de este proyecto>" -WhatIf
+   & "$kit\install-templates.ps1" -Project "<raíz de este proyecto>" -WhatIf
+   Si aparece un conflicto, no uses -Force; explica el problema y pide decisión.
+   Si los resultados son seguros, ejecuta ambos comandos sin -WhatIf ni -Force.
+   Detente si hay errores. Si la política bloquea scripts, usa, para cada uno:
+   powershell -ExecutionPolicy Bypass -File "<ruta absoluta al script>" -Project "<raíz de este proyecto>" -WhatIf
+   Solo después de revisar ambas vistas previas, repite sin -WhatIf.
+5. Rellena SOLO las plantillas .md creadas en esta ejecución con datos reales
+   comprobados del proyecto; no inventes comandos. Si falta información, indica
+   el dato pendiente. No edites plantillas o .clineignore preexistentes.
+6. Comprueba los archivos resultantes, los conflictos, el estado de Git y, en el
+   panel de reglas de Cline, que las reglas necesarias estén activadas. Resume
+   creados, actualizados, respetados, backups y pendientes. Indica los conflictos
+   sin resolver y no declares la instalación completamente operativa si los hay.
 ```
 
-`<raíz de este proyecto>` = el directorio de trabajo actual de Cline (la raíz del repo
-donde corre la tarea).
+`<raíz de este proyecto>` = ruta absoluta del proyecto destino, no la carpeta del kit.
+La revisión semántica requiere criterio del agente y, si existe un conflicto, una
+decisión del usuario: los scripts no pueden detectar contradicciones por contenido.
 
 ## Qué hay dentro
 
@@ -46,7 +63,8 @@ cline-rules-toolkit/
 │   ├── 20-testing.template.md
 │   └── .clineignore.template
 ├── install.ps1                   # instala rules/
-└── install-templates.ps1         # instala templates/
+├── install-templates.ps1         # instala templates/
+└── tests/install.tests.ps1        # pruebas sin dependencias adicionales
 ```
 
 Los ficheros de `rules/` son **genéricos**: no mencionan ningún proyecto concreto
@@ -73,10 +91,19 @@ Comportamiento:
 |---|---|
 | `.clinerules` no existe | lo crea |
 | fichero no existe en el destino | lo copia (`+`) |
-| fichero idéntico | lo salta (`=`), es idempotente |
-| fichero distinto | backup en `.clinerules.bak\<timestamp>\` y copia (`~`) |
+| fichero idéntico | lo respeta y registra su hash (`=`) |
+| fichero distinto, sin cambios locales desde la última instalación registrada | backup y actualización (`~`) |
+| fichero distinto, con cambios locales o sin historial | lo conserva y avisa del conflicto (`!`) |
+| conflicto con `-Force` explícito | backup y reemplazo (`~`) |
 
-Nunca borra ficheros del proyecto destino ni toca nada fuera de `.clinerules`.
+El registro `<proyecto>\.clinerules-toolkit.json` guarda hashes SHA-256 de las
+reglas gestionadas. Consérvalo en el repositorio junto a las reglas para compartir
+el historial. Si se pierde, los archivos diferentes se tratan como conflictos.
+Los backups se guardan en `<proyecto>\.clinerules.bak\<timestamp>-<id>\`.
+No se borran reglas; el registro y los backups se crean fuera de `.clinerules`.
+Revisa el `.gitignore` del proyecto destino para excluir `.clinerules.bak/` si
+no deseas publicar backups; podrían contener información sensible preexistente.
+Si `.clinerules` es un archivo, el instalador se detiene sin migrarlo ni modificarlo.
 Si la ejecución está bloqueada por política: `powershell -ExecutionPolicy Bypass -File .\install.ps1 ...`
 
 ## Instalar plantillas
@@ -91,14 +118,22 @@ Si la ejecución está bloqueada por política: `powershell -ExecutionPolicy Byp
 
 Copia `templates\*.template.md` a `.clinerules\<nombre>.md` y `.clineignore.template`
 a `<proyecto>\.clineignore`. Si el fichero ya existe lo respeta (avisa con `=`); usa
-`-Force` para sobrescribir. Después hay que **rellenar los `<huecos>`** a mano: son
+`-Force` para sobrescribir explícitamente con backup. Después hay que **rellenar los `<huecos>`** a mano: son
 esqueletos, no reglas listas.
 
 ## Actualizar un proyecto ya instalado
 
-Vuelve a ejecutar el mismo comando: solo sobrescribirá lo que haya cambiado en el
-kit, dejando backup del original. Los ficheros que hayas personalizado en el
-proyecto se detectan como "distintos" → se respaldan antes de reemplazar.
+Ejecuta primero ambos scripts con `-WhatIf`. Las reglas gestionadas sin cambios
+locales se actualizan con backup; las personalizadas se conservan y se notifican
+como conflictos. Las plantillas ya existentes no se actualizan. Examina las
+diferencias antes de resolver cada conflicto; usa `-Files` para seleccionar reglas
+y `-Force` solo si se ha autorizado expresamente su reemplazo. Una mezcla manual
+requiere revisión: el instalador no fusiona contenido ni verifica coherencia semántica.
+
+## Pruebas del instalador
+
+Desde la carpeta del kit ejecuta `powershell -NoProfile -File .\tests\install.tests.ps1`.
+Las pruebas crean y limpian proyectos aislados dentro de una carpeta temporal única.
 
 ## Añadir una regla nueva
 
@@ -125,7 +160,8 @@ crea por su cuenta.
 
 ## Alternativa: ruta global
 
-Cline también lee `C:\Users\<usuario>\.cline\rules`. **Ojo**: esas reglas se
+Cline también lee reglas globales, por defecto en `Documents\Cline\Rules` en Windows
+(y busca otras ubicaciones, incluida `~\.cline\rules`). **Ojo**: esas reglas se
 aplican a *todos* los proyectos, incluidos los de producción, y las reglas del
 proyecto ganan en caso de conflicto. Este kit está pensado para instalación por
 proyecto precisamente por eso.
@@ -136,7 +172,7 @@ proyecto precisamente por eso.
 |---|---|---|
 | Qué son | reglas terminadas | esqueletos con `<huecos>` |
 | Contenido | genérico, válido para cualquier proyecto | estructura vacía a rellenar |
-| Instalación | `install.ps1` (idempotente, backup al sobrescribir) | `install-templates.ps1` (no sobrescribe) |
+| Instalación | `install.ps1` (conserva cambios locales; backup al actualizar) | `install-templates.ps1` (conserva existentes por defecto) |
 | Ejemplos | 05-workflow, 30-review-workflow, memory-bank | 00-overview, 10-architecture, 20-testing |
 
 Por qué la diferencia: `00-overview` y `10-architecture` hablan del stack y de las

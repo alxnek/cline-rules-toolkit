@@ -1,100 +1,70 @@
 <#
 .SYNOPSIS
-  Instala las plantillas de cline-rules-toolkit en un proyecto.
-
+  Instala las plantillas que faltan; -Force respalda antes de reemplazar.
 .DESCRIPTION
-  Copia los ficheros de .\templates a un proyecto:
-    - *.template.md   -> <Project>\.clinerules\<nombre>.md
-    - *.template      -> <Project>\.clineignore   (si empieza por punto)
-
-  A diferencia de install.ps1, por defecto NO sobrescribe: si el fichero ya
-  existe se salta y avisa (son esqueletos pensados para rellenar a mano).
-  Usa -Force para sobrescribir.
-
-.EXAMPLE
-  .\install-templates.ps1 -Project 'D:\proyectos\mi-app' -WhatIf
-  Vista previa sin escribir.
-
-.EXAMPLE
-  .\install-templates.ps1 -Project 'D:\proyectos\mi-app'
-  Crea las plantillas que falten.
-
-.EXAMPLE
-  .\install-templates.ps1 -Project 'D:\proyectos\mi-app' -Files '20-testing.template.md'
-  Solo una plantilla.
+  -WhatIf muestra las operaciones sin escribir. Las plantillas existentes se
+  conservan por defecto, incluida .clineignore.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory = $true)]
     [string]$Project,
-
     [string[]]$Files,
-
     [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
-
 $Source = Join-Path $PSScriptRoot 'templates'
+if (-not (Test-Path -LiteralPath $Source -PathType Container)) { throw "No existe la carpeta de plantillas: $Source" }
+if (-not (Test-Path -LiteralPath $Project -PathType Container)) { throw "El proyecto destino no existe: $Project" }
+$Project = (Resolve-Path -LiteralPath $Project).ProviderPath
 $Target = Join-Path $Project '.clinerules'
-
-if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
-    throw "No encuentro la carpeta templates en el kit: $Source"
+if ((Test-Path -LiteralPath $Target) -and -not (Test-Path -LiteralPath $Target -PathType Container)) {
+    throw "El destino .clinerules no es una carpeta. Resuelve la migracion manualmente: $Target"
 }
-if (-not (Test-Path -LiteralPath $Project -PathType Container)) {
-    throw "El proyecto destino no existe: $Project"
-}
-
 if (-not $Files -or $Files.Count -eq 0) {
-    $Files = Get-ChildItem -LiteralPath $Source -File | Select-Object -ExpandProperty Name
+    $Files = @(Get-ChildItem -LiteralPath $Source -File -Force | Sort-Object Name | Select-Object -ExpandProperty Name)
 }
-
-if ($PSCmdlet.ShouldProcess($Target, "Crear .clinerules si no existe")) {
-    if (-not (Test-Path -LiteralPath $Target -PathType Container)) {
-        New-Item -ItemType Directory -Path $Target -Force | Out-Null
+$items = @(
+    foreach ($name in $Files) {
+        if ($name -notmatch '^[^\\/:]+\.template(\.md)?$') { throw "Nombre de plantilla invalido: $name" }
+        $src = Join-Path $Source $name
+        if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw "No existe en el kit: $name" }
+        $destName = ($name -replace '\.template\.md$', '.md') -replace '\.template$', ''
+        $dst = if ($destName.StartsWith('.')) { Join-Path $Project $destName } else { Join-Path $Target $destName }
+        if ((Test-Path -LiteralPath $dst) -and -not (Test-Path -LiteralPath $dst -PathType Leaf)) { throw "El destino no es un archivo: $dst" }
+        [PSCustomObject]@{ Name = $destName; Source = $src; Destination = $dst }
     }
-}
-
-Write-Host ""
-Write-Host "Plantillas: $Source"
-Write-Host "Destino:    $Project"
-Write-Host ""
-
-$created = 0
-$skipped = 0
-$forced  = 0
-
-foreach ($name in $Files) {
-    $src = Join-Path $Source $name
-    if (-not (Test-Path -LiteralPath $src -PathType Leaf)) {
-        Write-Warning "  ! No existe en el kit: $name"
-        continue
+)
+$backupRoot = Join-Path $Project ('.clinerules.bak\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
+$counts = @{ Created = 0; Updated = 0; Same = 0; Preserved = 0 }
+Write-Host "Plantillas: $Source`nDestino: $Project"
+foreach ($item in $items) {
+    $exists = Test-Path -LiteralPath $item.Destination -PathType Leaf
+    if ($exists -and -not $Force) {
+        Write-Host "  = $($item.Name) (ya existe, se respeta)"
+        $counts.Preserved++; continue
     }
-
-    $destName = $name -replace '\.template\.md$', '.md'
-    $destName = $destName -replace '\.template$', ''
-
-    if ($destName.StartsWith('.')) {
-        $dst = Join-Path $Project $destName
+    if ($exists -and (Get-FileHash -LiteralPath $item.Source -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $item.Destination -Algorithm SHA256).Hash) {
+        Write-Host "  = $($item.Name) (identica)"
+        $counts.Same++; continue
     }
-    else {
-        $dst = Join-Path $Target $destName
-    }
-
-    if ((Test-Path -LiteralPath $dst -PathType Leaf) -and -not $Force) {
-        Write-Host "  = $destName (ya existe, se respeta)"
-        $skipped++
-        continue
-    }
-
-    if ($PSCmdlet.ShouldProcess($dst, "Crear plantilla $destName")) {
-        Copy-Item -LiteralPath $src -Destination $dst -Force
-        if (Test-Path -LiteralPath $dst -PathType Leaf) { Write-Host "  + $destName"; $created++ }
+    if ($exists) { $counts.Updated++; $action = 'Respaldar y reemplazar plantilla' }
+    else { $counts.Created++; $action = 'Crear plantilla' }
+    if ($PSCmdlet.ShouldProcess($item.Destination, $action)) {
+        if ($exists) {
+            $backupDir = if ($item.Name.StartsWith('.')) { Join-Path $backupRoot 'root' } else { Join-Path $backupRoot '.clinerules' }
+            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+            Copy-Item -LiteralPath $item.Destination -Destination (Join-Path $backupDir $item.Name)
+            Write-Host "  ~ $($item.Name) (backup: $backupDir)"
+        } else {
+            $parent = Split-Path -Parent $item.Destination
+            if (-not (Test-Path -LiteralPath $parent -PathType Container)) { New-Item -ItemType Directory -Path $parent | Out-Null }
+            Write-Host "  + $($item.Name)"
+        }
+        Copy-Item -LiteralPath $item.Source -Destination $item.Destination -Force
     }
 }
-
-Write-Host ""
-Write-Host "Creadas: $created | Respetadas: $skipped"
-Write-Host ""
-Write-Host "Recuerda: son esqueletos. Rellena los <huecos> antes de usarlos."
-Write-Host ""
+$label = if ($WhatIfPreference) { 'Previstas' } else { 'Procesadas' }
+Write-Host "${label}: crear $($counts.Created) | reemplazar $($counts.Updated) | iguales $($counts.Same) | respetadas $($counts.Preserved)"
+if ($WhatIfPreference) { Write-Host 'Vista previa: no se ha escrito nada.' }
