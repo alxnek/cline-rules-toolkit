@@ -3,6 +3,34 @@
 Reglas de ingeniería para Cline, reutilizables entre proyectos. Fuente única de
 verdad: se editan aquí y se instalan en cada proyecto con `install.ps1`.
 
+## Inicio rápido (con un agente de Cline)
+
+Copia este prompt en una tarea de Cline abierta en la **raíz del proyecto** donde
+quieras las reglas. El agente clona el kit, lo instala y rellena las plantillas por ti:
+
+```text
+Instala y configura el kit cline-rules-toolkit (https://github.com/alxnek/cline-rules-toolkit.git)
+en este proyecto. Idioma: español. Sigue estos pasos en PowerShell (Windows):
+
+1. Clona el kit FUERA del proyecto (no lo metas en el repo):
+   git clone https://github.com/alxnek/cline-rules-toolkit.git "$env:TEMP/cline-rules-toolkit"
+2. Entra en esa carpeta y ejecuta primero la vista previa (no escribe nada):
+   ./install.ps1 -Project "<raíz de este proyecto>" -WhatIf
+   Si el resultado es correcto, repite el mismo comando SIN -WhatIf para instalar.
+3. Instala las plantillas:  ./install-templates.ps1 -Project "<raíz de este proyecto>"
+4. Rellena los <huecos> de .clinerules/00-overview.md, 10-architecture.md y 20-testing.md
+   con datos REALES de este proyecto (stack, estructura de carpetas, comandos de test).
+5. No sobrescribas a mano ningún .clinerules/*.md que ya exista y sea distinto:
+   los scripts ya hacen backup en .clinerules.bak/<timestamp>/. Respétalo.
+6. Si PowerShell bloquea la ejecución (ExecutionPolicy):
+   powershell -ExecutionPolicy Bypass -File ./install.ps1 -Project "<raíz de este proyecto>"
+7. Al terminar, resume en una tabla qué ficheros creó (+) / actualizó (~) / respetó (=)
+   y qué plantillas quedaron pendientes de rellenar.
+```
+
+`<raíz de este proyecto>` = el directorio de trabajo actual de Cline (la raíz del repo
+donde corre la tarea).
+
 ## Qué hay dentro
 
 ```text
