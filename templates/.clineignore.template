@@ -1,0 +1,51 @@
+# .clineignore — qué NO carga Cline automáticamente al arrancar la tarea.
+# Sintaxis = .gitignore (carpetas, globs y !negaciones).
+# ATENCION: no es control de acceso. Los ficheros ignorados se pueden leer
+# con @mencion o desde la shell. Cline va a deprecar esta via; la alternativa
+# recomendada es un hook PreToolUse que sí bloquea de verdad.
+
+# --- Entornos y caches ---
+venv*/
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.vs/
+.vscode/
+.git/
+
+# --- Dependencias ---
+node_modules/
+
+# --- Builds, salidas y logs ---
+dist/
+build/
+out/
+coverage/
+output/
+*.log
+
+# --- Secretos (nunca deben entrar en contexto) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+config.json
+!config.json_example
+
+# --- Datos grandes y binarios ---
+*.csv
+*.parquet
+*.sqlite
+*.db
+*.pkl
+*.zip
+*.png
+*.jpg
+*.pdf
+
+# --- Ajustes del proyecto ---
+# Anade aqui versiones antiguas, carpetas concretas o lo que sobre.
+# Si Cline no encuentra un fichero que necesitas, revisa este archivo primero.
